@@ -216,6 +216,24 @@ def claude_plan(oauth):
     return f"Max {m.group(1)}" if m else (oauth.get("subscriptionType") or "").title()
 
 
+SYMBOL = {"USD": "$", "EUR": "\u20ac", "GBP": "\u00a3", "JPY": "\u00a5"}
+
+
+def money(m):
+    """An {amount_minor, currency, exponent} amount as text.
+
+    The exponent says how many minor units make a major one, so it drives both the
+    scaling and the number of decimals: no currency is assumed to have two.
+    """
+    if not isinstance(m, dict) or not isinstance(m.get("amount_minor"), (int, float)):
+        return None
+    exp = m.get("exponent") if isinstance(m.get("exponent"), int) else 2
+    exp = max(0, min(6, exp))
+    cur = m.get("currency") or ""
+    sym = SYMBOL.get(cur, f"{cur} " if cur else "")
+    return f"{sym}{m['amount_minor'] / (10 ** exp):,.{exp}f}"
+
+
 def parse_spend(d):
     """The credit pool, for seats metered on money rather than on time.
 
@@ -233,7 +251,12 @@ def parse_spend(d):
     percent = spend.get("percent")
     if not isinstance(percent, (int, float)):
         return []
-    return [{"kind": "credits", "used": percent, "resets_at": None}]
+    win = {"kind": "credits", "used": percent, "resets_at": None}
+    used, limit = money(spend.get("used")), money(spend.get("limit"))
+    if used:
+        # A pool with no cap reports limit null; then the amount spent is all there is.
+        win["amount"] = f"{used} / {limit}" if limit else used
+    return [win]
 
 
 def parse_claude(d):
@@ -465,7 +488,8 @@ def bar_text(data, now, view):
             continue
         w = headline(wins)
         stale = "~" if now - st.get("fetched_at", 0) > STALE_AFTER else ""
-        reset = f" {left(w['resets_at'], now)}" if w["resets_at"] else ""
+        reset = (f" {left(w['resets_at'], now)}" if w["resets_at"]
+                 else f" {w['amount']}" if w.get("amount") else "")
         parts.append(f"{view.mark(p)} {stale}{round(w['used'])}% {view.t['used']}{reset}")
     return "   ".join(parts)
 
@@ -504,7 +528,8 @@ def window_row(w, now, W, t):
     bw = max(6, W - 47)  # indent 4 + label 14 + 1 + bar + 1 + pct 4 + 2 + reset 19 + margin 2
     fill = max(1 if used > 0 else 0, round(bw * min(100, used) / 100))
     track = fg(sev(used), "━" * fill) + fg("track", "━" * (bw - fill))
-    reset = f"{left(w['resets_at'], now)} · {clock(w['resets_at'], now, t)}" if w["resets_at"] else ""
+    reset = (f"{left(w['resets_at'], now)} · {clock(w['resets_at'], now, t)}" if w["resets_at"]
+             else w.get("amount") or "")
     return ("    " + fg("dim", pad(label(w, t), 14)) + " " + track + " "
             + fg("fg", f"{round(used):>3}%") + "  " + fg("dim", reset))
 

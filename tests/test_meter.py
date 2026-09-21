@@ -66,6 +66,28 @@ class Parsing(unittest.TestCase):
         self.assertEqual([(w["kind"], w["used"], w["resets_at"]) for w in wins],
                          [("credits", 42, None)])
 
+    def test_claude_credits_amount(self):
+        self.assertEqual(meter.parse_claude(CLAUDE_CREDITS)[0]["amount"], "$42.00 / $100.00")
+
+    def test_claude_credits_uncapped_pool(self):
+        # A pool with no cap reports limit null; the amount spent is all there is.
+        d = {**CLAUDE_CREDITS, "spend": {**CLAUDE_CREDITS["spend"], "limit": None}}
+        self.assertEqual(meter.parse_claude(d)[0]["amount"], "$42.00")
+
+    def test_money_exponent_drives_the_decimals(self):
+        self.assertEqual(meter.money({"amount_minor": 123456, "currency": "USD", "exponent": 2}),
+                         "$1,234.56")
+        self.assertEqual(meter.money({"amount_minor": 1234, "currency": "JPY", "exponent": 0}),
+                         "\u00a51,234")
+
+    def test_money_unknown_currency_keeps_its_code(self):
+        self.assertEqual(meter.money({"amount_minor": 500, "currency": "CHF", "exponent": 2}),
+                         "CHF 5.00")
+
+    def test_money_rejects_nonsense(self):
+        self.assertIsNone(meter.money(None))
+        self.assertIsNone(meter.money({"currency": "USD"}))
+
     def test_claude_credits_ignored_when_disabled(self):
         # A plan with real windows reports enabled false; nothing is added for it.
         self.assertEqual(
