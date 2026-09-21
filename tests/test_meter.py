@@ -35,6 +35,18 @@ CODEX = {
         "secondary_window": {"used_percent": 4, "limit_window_seconds": 604800, "reset_at": 1789811340},
     },
 }
+# A seat metered on credits rather than on time: every window comes back null and
+# spend carries the only reading. Numbers are made up, the shape is not.
+CLAUDE_CREDITS = {
+    "five_hour": None,
+    "seven_day": None,
+    "limits": [],
+    "spend": {
+        "used": {"amount_minor": 4200, "currency": "USD", "exponent": 2},
+        "limit": {"amount_minor": 10000, "currency": "USD", "exponent": 2},
+        "percent": 42, "severity": "warning", "enabled": True,
+    },
+}
 NO_LOGIN = {"error": {"code": "nologin"}}
 
 
@@ -48,6 +60,27 @@ class Parsing(unittest.TestCase):
         self.assertEqual([(w["kind"], w.get("model"), w["used"]) for w in wins],
                          [("session", None, 8.0), ("weekly", None, 21.0), ("weekly", "Fable", 18)])
         self.assertAlmostEqual(wins[0]["resets_at"], 1800002400.604354)
+
+    def test_claude_credits_window(self):
+        wins = meter.parse_claude(CLAUDE_CREDITS)
+        self.assertEqual([(w["kind"], w["used"], w["resets_at"]) for w in wins],
+                         [("credits", 42, None)])
+
+    def test_claude_credits_ignored_when_disabled(self):
+        # A plan with real windows reports enabled false; nothing is added for it.
+        self.assertEqual(
+            meter.parse_claude({**CLAUDE, "spend": {"percent": 0, "enabled": False}}),
+            meter.parse_claude(CLAUDE))
+
+    def test_claude_credits_needs_a_number(self):
+        with self.assertRaises(meter.FetchError) as ctx:
+            meter.parse_claude({"five_hour": None, "seven_day": None, "limits": [],
+                                "spend": {"enabled": True, "percent": None}})
+        self.assertEqual(ctx.exception.code, "format")
+
+    def test_credits_label(self):
+        t = meter.TEXT["en"]
+        self.assertEqual(meter.label({"kind": "credits"}, t), "Credits")
 
     def test_claude_unknown_shape(self):
         with self.assertRaises(meter.FetchError) as ctx:

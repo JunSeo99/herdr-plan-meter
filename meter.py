@@ -58,7 +58,8 @@ NERD_ICON = {"claude": "\uec82", "codex": "\uec81"}  # Nerd Fonts >= 3.5 codicon
 
 TEXT = {
     "en": {
-        "used": "used", "session": "5h", "weekly": "Weekly", "hours": "{n}h", "days": "{n}d",
+        "used": "used", "session": "5h", "weekly": "Weekly", "credits": "Credits",
+        "hours": "{n}h", "days": "{n}d",
         "detail": "Detail", "compact": "Compact", "loading": "Loading…", "refreshing": "Refreshing…",
         "updated": "Updated {ago}", "keys": "Tab view · r refresh · q close",
         "now": "just now", "s": "{n}s ago", "m": "{n}m ago", "h": "{n}h ago", "as_of": "value from {ago}",
@@ -70,7 +71,8 @@ TEXT = {
         "setup_keys": "c copy to clipboard · q close", "copied": "Copied.", "no_clipboard": "No clipboard tool found.",
     },
     "ko": {
-        "used": "사용", "session": "5시간", "weekly": "주간", "hours": "{n}시간", "days": "{n}일",
+        "used": "사용", "session": "5시간", "weekly": "주간", "credits": "크레딧",
+        "hours": "{n}시간", "days": "{n}일",
         "detail": "상세", "compact": "압축", "loading": "불러오는 중…", "refreshing": "갱신 중…",
         "updated": "{ago} 갱신", "keys": "Tab 보기 전환 · r 새로고침 · q 닫기",
         "now": "방금", "s": "{n}초 전", "m": "{n}분 전", "h": "{n}시간 전", "as_of": "{ago} 값",
@@ -214,6 +216,26 @@ def claude_plan(oauth):
     return f"Max {m.group(1)}" if m else (oauth.get("subscriptionType") or "").title()
 
 
+def parse_spend(d):
+    """The credit pool, for seats metered on money rather than on time.
+
+    Such a seat has no rate-limit windows at all: five_hour and seven_day come back
+    null and limits empty, so without this the whole account reads as an unexpected
+    response. spend is the only reading it has. A plan that plainly has windows
+    reports enabled false here, so nothing is added for it.
+
+    A pool does not reset on a schedule the way a window does, so resets_at stays
+    None and the renderers simply leave the countdown off.
+    """
+    spend = d.get("spend")
+    if not isinstance(spend, dict) or not spend.get("enabled"):
+        return []
+    percent = spend.get("percent")
+    if not isinstance(percent, (int, float)):
+        return []
+    return [{"kind": "credits", "used": percent, "resets_at": None}]
+
+
 def parse_claude(d):
     wins = []
     for key, kind in (("five_hour", "session"), ("seven_day", "weekly")):
@@ -225,6 +247,7 @@ def parse_claude(d):
         if lim.get("kind") == "weekly_scoped" and model and isinstance(lim.get("percent"), (int, float)):
             wins.append({"kind": "weekly", "model": model, "used": lim["percent"],
                          "resets_at": to_epoch(lim.get("resets_at"))})
+    wins += parse_spend(d)
     if not wins:
         raise FetchError("format")
     return wins
@@ -416,7 +439,8 @@ def ago(ts, now, t):
 
 def label(w, t):
     kind = w.get("kind")
-    base = t[kind].format(n=w.get("n")) if kind in ("session", "weekly", "hours", "days") else str(kind)
+    base = (t[kind].format(n=w.get("n"))
+            if kind in ("session", "weekly", "credits", "hours", "days") else str(kind))
     return f"{base} · {w['model']}" if w.get("model") else base
 
 

@@ -35,6 +35,10 @@ The second command opens a popup with the config snippet for your install. Press
 
 Only plans you are signed into appear.
 
+Seats metered on credits rather than on time — where the 5-hour and weekly windows
+come back empty — show a **Credits** row with the percent of the pool used. A pool
+has no scheduled reset, so that row carries no countdown.
+
 **Why another usage plugin?** Plan Meter is one Python file with no dependencies and no build step. It leaves your Claude Code statusLine alone, shows numbers even when no Claude session is running, and only ever reads credentials.
 
 ## Setup
